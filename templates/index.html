@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RAG System</title>
+    <style>
+        .section { margin: 20px; padding: 15px; border: 1px solid #ddd; }
+        form { margin: 10px 0; }
+        input, button { margin: 5px; padding: 8px; }
+        .response { background: #f5f5f5; padding: 10px; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+    </style>
+</head>
+<body>
+    <h1>HumanKind-RAG</h1>
+    
+    <!-- Create Index Section -->
+    <div class="section">
+        <h2>Create Index</h2>
+        <form onsubmit="event.preventDefault(); handleForm('create')">
+            <input type="number" id="create-clientId" placeholder="Client ID" required>
+            <input type="text" id="create-fileName" placeholder="File Name" required>
+            <input type="text" id="create-fileUrl" placeholder="File URL/Path" required>
+            <input type="number" id="create-propertyId" placeholder="Property ID" required>
+            <button type="submit">Create Index</button>
+        </form>
+        <div id="create-response" class="response"></div>
+    </div>
+
+
+    <!-- Show Indexed Documents Section -->
+    <div class="section">
+        <h2>Show Indexed Documents</h2>
+        <form onsubmit="event.preventDefault(); fetchIndexedDocs()">
+            <input type="number" id="show-clientId" placeholder="Client ID" required>
+            <input type="number" id="show-propertyId" placeholder="Property ID">
+            <button type="submit">Show Indexed Docs</button>
+        </form>
+        <div id="show-response" class="response"></div>
+        <table id="indexed-docs-table" style="display: none;">
+            <thead>
+                <tr>
+                    <th>File Name</th>
+                    <th>Indexed ID</th>
+                    <th>File URL</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+
+
+    <!-- Fetch Embedded Documents Section -->
+    <div class="section">
+        <h2>Fetch Embedded Documents</h2>
+        <form onsubmit="event.preventDefault(); fetchEmbeddedDocs()">
+            <input type="number" id="embed-clientId" placeholder="Client ID" required>
+            <input type="number" id="embed-propertyId" placeholder="Property ID" required>
+            <button type="submit">Fetch Embedded Docs</button>
+        </form>
+        <div id="embedded-response" class="response"></div>
+    </div>
+
+
+
+    <!-- Update Index Section -->
+    <div class="section">
+        <h2>Update Index</h2>
+        <form onsubmit="event.preventDefault(); handleForm('update')">
+            <input type="number" id="update-clientId" placeholder="Client ID" required>
+            <input type="text" id="update-indexedId" placeholder="Index ID" required>
+            <input type="text" id="update-fileName" placeholder="New File Name" required>
+            <input type="text" id="update-fileUrl" placeholder="New File URL/Path" required>
+            <input type="number" id="update-propertyId" placeholder="Property ID" required>
+            <button type="submit">Update Index</button>
+        </form>
+        <div id="update-response" class="response"></div>
+    </div>
+
+    <!-- Delete Index Section -->
+    <div class="section">
+        <h2>Delete Index</h2>
+        <form onsubmit="event.preventDefault(); handleForm('delete')">
+            <input type="number" id="delete-clientId" placeholder="Client ID" required>
+            <input type="text" id="delete-indexedId" placeholder="Index ID" required>
+            <button type="submit">Delete Index</button>
+        </form>
+        <div id="delete-response" class="response"></div>
+    </div>
+
+    <!-- Ask Section -->
+    <div class="section">
+        <h2>Ask Question</h2>
+        <form onsubmit="event.preventDefault(); handleForm('ask')">
+            <input type="number" id="ask-clientId" placeholder="Client ID" required>
+            <input type="number" id="ask-propertyId" placeholder="Property ID (Leave empty for Global FAQ)" >
+            <input type="text" id="ask-query" placeholder="Your question" required style="width: 300px;">
+            <button type="submit">Ask</button>
+        </form>
+        <div id="ask-response" class="response"></div>
+    </div>
+
+    <!-- Generic Ask Section -->
+    <div class="section">
+        <h2>Generic Question</h2>
+        <form onsubmit="event.preventDefault(); handleForm('ask-generic')">
+            <input type="text" id="ask-generic-query" placeholder="Your question" required style="width: 300px;">
+            <button type="submit">Ask Generic</button>
+        </form>
+        <div id="ask-generic-response" class="response"></div>
+    </div>
+
+    <script>
+        async function handleForm(endpoint) {
+            const formData = {
+                'create': {
+                    url: '/create-file-indexing',
+                    inputs: ['clientId', 'fileName', 'fileUrl', 'propertyId'],
+                    responseId: 'create-response'
+                },
+                'update': {
+                    url: '/update-file-indexing',
+                    inputs: ['clientId', 'indexedId', 'fileName', 'fileUrl', 'propertyId'],
+                    responseId: 'update-response'
+                },
+                'delete': {
+                    url: '/delete-indexing',
+                    inputs: ['clientId', 'indexedId'],
+                    responseId: 'delete-response'
+                },
+                'ask': {
+                    url: '/ask',
+                    inputs: ['clientId', 'propertyId', 'query'],
+                    responseId: 'ask-response'
+                },
+                'ask-generic': {
+                    url: '/ask-generic',
+                    inputs: ['query'],
+                    responseId: 'ask-generic-response'
+                }
+            };
+
+            const config = formData[endpoint];
+            const body = {};
+            config.inputs.forEach(field => {
+                let inputValue = document.getElementById(`${endpoint}-${field}`).value.trim();
+                
+                // If propertyId is empty, remove it from request body
+                if (field === 'propertyId' && inputValue === '') {
+                    return;  // Skip adding propertyId if empty
+                }
+
+                body[field] = inputValue;
+            });
+
+            try {
+                document.getElementById(config.responseId).innerHTML = `<em>Loading...</em>`;
+                const response = await fetch(config.url, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)
+                });
+
+                const responseDiv = document.getElementById(config.responseId);
+                if (!response.ok) {
+                    const error = await response.json();
+                    responseDiv.innerHTML = `<strong>Error:</strong> ${error.error}`;
+                    return;
+                }
+
+                const data = await response.json();
+                responseDiv.innerHTML = endpoint.startsWith('ask') 
+                    ? `<strong>Response:</strong> ${data.airesponse}<br>
+                       <strong>Sources:</strong> ${data.aisources || 'N/A'}`
+                    : JSON.stringify(data, null, 2);
+                
+                // Clear form inputs after successful submission
+                config.inputs.forEach(field => {
+                    document.getElementById(`${endpoint}-${field}`).value = '';
+                });
+
+            } catch (error) {
+                document.getElementById(config.responseId).innerHTML = 
+                    `<strong>Error:</strong> ${error.message}`;
+            }
+        }
+
+        async function fetchIndexedDocs() {
+            const clientId = document.getElementById("show-clientId").value;
+            const propertyId = document.getElementById("show-propertyId").value;
+            const responseDiv = document.getElementById("show-response");
+            const table = document.getElementById("indexed-docs-table");
+            const tbody = table.querySelector("tbody");
+
+            if (!clientId || !propertyId) {
+                responseDiv.innerHTML = "<strong>Error:</strong> Please provide both Client ID and Property ID.";
+                return;
+            }
+
+            responseDiv.innerHTML = `<em>Fetching indexed documents...</em>`;
+            table.style.display = "none";
+
+            try {
+                const response = await fetch(`/get-indexed-files?clientId=${clientId}&propertyId=${propertyId}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    responseDiv.innerHTML = `<strong>Error:</strong> ${data.error}`;
+                    return;
+                }
+
+                tbody.innerHTML = "";
+                data.forEach(file => {
+                    const row = `<tr>
+                        <td>${file.fileName}</td>
+                        <td>${file.indexedId}</td>
+                        <td><a href="${file.fileUrl}" target="_blank">${file.fileUrl}</a></td>
+                    </tr>`;
+                    tbody.innerHTML += row;
+                });
+
+                responseDiv.innerHTML = `<strong>Success:</strong> Indexed documents loaded.`;
+                table.style.display = "block";
+            } catch (error) {
+                responseDiv.innerHTML = `<strong>Error:</strong> ${error.message}`;
+            }
+        }
+
+        async function fetchEmbeddedDocs() {
+            const clientId = document.getElementById("embed-clientId").value;
+            const propertyId = document.getElementById("embed-propertyId").value;
+            const responseDiv = document.getElementById("embedded-response");
+
+            if (!clientId || !propertyId) {
+                responseDiv.innerHTML = "<strong>Error:</strong> Please provide both Client ID and Property ID.";
+                return;
+            }
+
+            responseDiv.innerHTML = `<em>Fetching embedded documents...</em>`;
+
+            try {
+                const response = await fetch(`/get-embedded-docs?clientId=${clientId}&propertyId=${propertyId}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    responseDiv.innerHTML = `<strong>Error:</strong> ${data.error}`;
+                    return;
+                }
+
+                let resultHtml = "<strong>Embedded Documents:</strong><br><ul>";
+                data.forEach(doc => {
+                    resultHtml += `<li><strong>${doc.fileName}</strong>: ${doc.contentSnippet}</li>`;
+                });
+                resultHtml += "</ul>";
+
+                responseDiv.innerHTML = resultHtml;
+            } catch (error) {
+                responseDiv.innerHTML = `<strong>Error:</strong> ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>
