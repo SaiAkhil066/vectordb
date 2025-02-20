@@ -127,7 +127,7 @@ def get_embedding(text):
     except Exception as e:
         return f"Embedding failed: {str(e)}"
 
-def generate_response(prompt, model="deepseek-r1:7b"):
+def generate_response(prompt, model="deepseek-r1:14b"):
     try:
         response = requests.post(
             f"{OLLAMA_URL}/generate",
