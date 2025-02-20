@@ -1,0 +1,15 @@
+Flask
+requests
+chromadb
+sqlite-utils
+uuid
+gunicorn
+python-dotenv
+boto3
+
+
+pdfplumber 
+python-docx 
+python-pptx 
+openpyxl 
+pandas
