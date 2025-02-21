@@ -55,6 +55,13 @@ def get_file_content(file_path):
         # Handle S3 files
         if file_path.startswith("s3://"):
             bucket_name, key = file_path.replace("s3://", "").split("/", 1)
+
+            # Check if file exists in S3
+            try:
+                s3_client.head_object(Bucket=bucket_name, Key=key)
+            except s3_client.exceptions.ClientError as e:
+                return f"S3 file not found: {file_path}"
+
             obj = s3_client.get_object(Bucket=bucket_name, Key=key)
             file_content = obj["Body"].read()
 
@@ -70,21 +77,8 @@ def get_file_content(file_path):
             else:
                 return file_content.decode("utf-8")
 
-        # Handle local file system
-        elif os.path.exists(file_path):
-            if file_path.endswith(".pdf"):
-                return extract_text_from_pdf(file_path)
-            elif file_path.endswith(".docx"):
-                return extract_text_from_docx(file_path)
-            elif file_path.endswith(".pptx"):
-                return extract_text_from_pptx(file_path)
-            elif file_path.endswith(".xlsx"):
-                return extract_text_from_xlsx(file_path)
-            else:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    return f.read()
-
-        return f"Invalid file path: {file_path}"
+        # Reject any non-S3 file paths (since Ashish confirmed all docs are in S3)
+        return "Invalid file path: Only S3 file paths are allowed."
 
     except Exception as e:
         return f"Failed to fetch content: {str(e)}"
@@ -127,7 +121,7 @@ def get_embedding(text):
     except Exception as e:
         return f"Embedding failed: {str(e)}"
 
-def generate_response(prompt, model="deepseek-r1:14b"):
+def generate_response(prompt, model="deepseek-r1:7b"):
     try:
         response = requests.post(
             f"{OLLAMA_URL}/generate",
@@ -161,13 +155,23 @@ def create_index():
         required = ['clientId', 'fileName', 'fileUrl', 'propertyId']
         if not all(k in data for k in required):
             return jsonify(error="Missing required fields"), 400
-            
+
+        # Validate fileUrl
+        if not data["fileUrl"].startswith("s3://"):
+            return jsonify(error="Invalid fileUrl: Must be an S3 path."), 400
+        
+        # Fetch and process the file content
         content = get_file_content(data['fileUrl'])
+        
+        # Check if the content retrieval failed
+        if "Failed to fetch content" in content or "S3 file not found" in content:
+            return jsonify(error=content), 400
+
         embedding = get_embedding(content)
-        
+
         # Generate UUID FIRST before any database operations
-        indexed_id = str(uuid.uuid4())  # <--- THIS WAS MISSING/MISPLACED
-        
+        indexed_id = str(uuid.uuid4())
+
         # Store in Chroma
         collection.add(
             ids=[indexed_id],
@@ -180,14 +184,14 @@ def create_index():
             }],
             documents=[content]
         )
-        
+
         # Store metadata in SQLite
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("INSERT INTO file_indexes VALUES (?, ?, ?, ?, ?)",
                   (data['clientId'], data['fileName'], data['fileUrl'], data['propertyId'], indexed_id))
         conn.commit()
-        
+
         return jsonify({"indexed": True, "indexedid": indexed_id})
 
     except Exception as e:
@@ -341,14 +345,13 @@ def ask():
 
         property_id = data.get('propertyId', None)  # Get propertyId, allow None
 
-        # If propertyId is empty or not provided, use sample-global-faq.txt
+        # If propertyId is empty or not provided, use sample-global-faq.txt from S3
         if not property_id:
-            faq_file = "sample-global-faq.txt"
-            if not os.path.exists(faq_file):
-                return jsonify(error="Global FAQ file not found"), 404
+            faq_s3_path = "s3://trojan-horse-ai-qa/uploads/sample-global-faq.txt"
+            faq_content = get_file_content(faq_s3_path)
 
-            with open(faq_file, "r", encoding="utf-8") as f:
-                faq_content = f.read()
+            if "Failed to fetch content" in faq_content or "S3 file not found" in faq_content:
+                return jsonify(error="Global FAQ file not found in S3"), 404
 
             prompt = f"Context:\n{faq_content}\n\nQuestion: {data['query']}\nAnswer:"
             response = generate_response(prompt)
